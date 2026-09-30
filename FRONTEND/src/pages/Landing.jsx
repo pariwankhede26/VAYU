@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { getDefaultHotspotsClient } from "../utils/intelligenceEngine";
 
 export default function Landing() {
   const [highestRisk, setHighestRisk] = useState(null);
@@ -9,22 +10,41 @@ export default function Landing() {
   useEffect(() => {
     fetch("/api/hotspots")
       .then(async (response) => {
+        if (!response.ok) throw new Error();
         const data = await response.json();
-        if (!response.ok || !data.success) throw new Error("Hotspots unavailable");
-        const highest = [...(data.hotspots || [])].sort(
+        if (!data || !data.success || !Array.isArray(data.hotspots)) throw new Error();
+        const highest = [...data.hotspots].sort(
           (first, second) => second.riskScore - first.riskScore
         )[0];
         setHighestRisk(highest || null);
       })
-      .catch((error) => console.error("Landing hotspot load failed:", error));
+      .catch(() => {
+        const fallbackHotspots = getDefaultHotspotsClient();
+        const highest = [...fallbackHotspots].sort(
+          (first, second) => second.riskScore - first.riskScore
+        )[0];
+        setHighestRisk(highest || null);
+      });
 
     fetch("/api/country-config")
       .then(async (response) => {
+        if (!response.ok) throw new Error();
         const data = await response.json();
-        if (!response.ok || !data.success) throw new Error("Country context unavailable");
-        setCountries(data.countries || {});
+        if (!data || !data.success || !data.countries) throw new Error();
+        setCountries(data.countries);
       })
-      .catch((error) => console.error("Country context load failed:", error));
+      .catch(() => {
+        setCountries({
+          India: {
+            name: "India",
+            flag: "🇮🇳",
+            defaultCenter: [20.5937, 78.9629],
+            zoom: 5,
+            primaryPollutants: ["PM2.5", "PM10", "NO2"],
+            focusSeasons: ["Winter smog", "Post-harvest stubble burning"]
+          }
+        });
+      });
   }, []);
 
   const features = [

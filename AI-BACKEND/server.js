@@ -216,23 +216,22 @@ app.post(
     try {
 
       // ------------------------------------------------
-      // CHECK IMAGE
+      // CHECK IMAGE OR DESCRIPTION
       // ------------------------------------------------
 
-      if (!req.file || !req.file.mimetype?.startsWith("image/")) {
+      const description = req.body.description || "";
+      const hasImage = Boolean(req.file && req.file.mimetype?.startsWith("image/"));
 
+      if (!hasImage && !description.trim()) {
         return res.status(400).json({
           success: false,
-          error: "Please upload a valid pollution image."
+          error: "Please upload an image or provide a description of the observed pollution."
         });
-
       }
 
       // ------------------------------------------------
       // GET FORM DATA
       // ------------------------------------------------
-
-      const description = req.body.description || "";
 
       const latitude = req.body.latitude ?? "";
 
@@ -336,13 +335,6 @@ Example:
 `;
 
       // ------------------------------------------------
-      // IMAGE → BASE64
-      // ------------------------------------------------
-
-      const imageBase64 =
-        req.file.buffer.toString("base64");
-
-      // ------------------------------------------------
       // GEMINI MODEL FALLBACK
       // ------------------------------------------------
 
@@ -352,9 +344,7 @@ Example:
       ];
 
       let response = null;
-
       let successfulModel = null;
-
       let lastError = null;
 
       // ------------------------------------------------
@@ -362,62 +352,37 @@ Example:
       // ------------------------------------------------
 
       if (ai && process.env.GEMINI_API_KEY) {
+        const parts = [{ text: prompt }];
+        if (hasImage) {
+          parts.push({
+            inlineData: {
+              mimeType: req.file.mimetype,
+              data: req.file.buffer.toString("base64")
+            }
+          });
+        }
+
         for (const model of models) {
-
           try {
+            console.log(`Trying Gemini model: ${model}`);
 
-            console.log(
-              `Trying Gemini model: ${model}`
-            );
-
-            response =
-              await ai.models.generateContent({
-
-                model: model,
-
-                contents: [
-                  {
-                    role: "user",
-
-                    parts: [
-
-                      {
-                        text: prompt
-                      },
-
-                      {
-                        inlineData: {
-                          mimeType: req.file.mimetype,
-                          data: imageBase64
-                        }
-                      }
-
-                    ]
-                  }
-                ]
-
-              });
+            response = await ai.models.generateContent({
+              model: model,
+              contents: [
+                {
+                  role: "user",
+                  parts: parts
+                }
+              ]
+            });
 
             successfulModel = model;
-
-            console.log(
-              `Gemini success: ${model}`
-            );
-
+            console.log(`Gemini success: ${model}`);
             break;
-
-          }
-
-          catch (error) {
-
+          } catch (error) {
             lastError = error;
-
-            console.log(
-              `Gemini ${model} failed: ${error.message}`
-            );
-
+            console.log(`Gemini ${model} failed: ${error.message}`);
           }
-
         }
       }
 
@@ -800,15 +765,17 @@ app.use((req, res) => {
 // START SERVER
 // ==================================================
 
-const server = app.listen(PORT, HOST, () => {
-  console.log(
-    `VAYU Backend running on http://${HOST}:${PORT}`
-  );
-});
+if (!process.env.NETLIFY) {
+  const server = app.listen(PORT, HOST, () => {
+    console.log(
+      `VAYU Backend running on http://${HOST}:${PORT}`
+    );
+  });
 
-server.on("error", (err) => {
-  console.error("VAYU server listen error:", err);
-});
+  server.on("error", (err) => {
+    console.error("VAYU server listen error:", err);
+  });
+}
 
 process.on("unhandledRejection", (reason) => {
   console.error("Unhandled Rejection:", reason);

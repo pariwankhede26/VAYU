@@ -1,6 +1,13 @@
 [build]
   command = "npm run build"
   publish = "FRONTEND/dist"
+  functions = "netlify/functions"
+
+# Route backend API requests directly to Netlify serverless function
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/api/:splat"
+  status = 200
 
 # Single-Page Application (SPA) client-side routing fallback
 [[redirects]]

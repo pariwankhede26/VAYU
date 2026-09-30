@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { getDefaultHotspotsClient, getDefaultWeatherClient } from "../utils/intelligenceEngine";
 
 export default function Dashboard() {
   const [hotspots, setHotspots] = useState([]);
@@ -11,26 +12,44 @@ export default function Dashboard() {
   useEffect(() => {
     async function loadDashboardData() {
       try {
-        const [hotspotResponse, weatherResponse] = await Promise.all([
-          fetch("/api/hotspots"),
-          fetch("/api/weather"),
-        ]);
-        const [hotspotData, weatherData] = await Promise.all([
-          hotspotResponse.json(),
-          weatherResponse.json(),
-        ]);
-        if (!hotspotResponse.ok || !hotspotData.success) {
-          throw new Error("Environmental intelligence service unavailable.");
+        let loadedHotspots = null;
+        let loadedWeather = null;
+
+        try {
+          const [hotspotResponse, weatherResponse] = await Promise.all([
+            fetch("/api/hotspots"),
+            fetch("/api/weather"),
+          ]);
+          if (hotspotResponse.ok) {
+            const hotspotData = await hotspotResponse.json();
+            if (hotspotData && hotspotData.success && Array.isArray(hotspotData.hotspots)) {
+              loadedHotspots = hotspotData.hotspots;
+            }
+          }
+          if (weatherResponse.ok) {
+            const weatherData = await weatherResponse.json();
+            if (weatherData && weatherData.success && weatherData.weather) {
+              loadedWeather = weatherData.weather;
+            }
+          }
+        } catch (fetchErr) {
+          console.warn("Backend API unreachable in Dashboard, using client fallback:", fetchErr);
         }
-        setHotspots(hotspotData.hotspots || []);
-        if (weatherResponse.ok && weatherData.success) {
-          setWeather(weatherData.weather || null);
-        } else {
-          setWeatherError("Weather context unavailable.");
+
+        // If backend is not available (e.g. Netlify static hosting)
+        if (!loadedHotspots) {
+          loadedHotspots = getDefaultHotspotsClient();
         }
+        if (!loadedWeather) {
+          loadedWeather = getDefaultWeatherClient();
+        }
+
+        setHotspots(loadedHotspots);
+        setWeather(loadedWeather);
       } catch (error) {
         console.error("Dashboard data error:", error);
-        setServiceError("Environmental intelligence service unavailable.");
+        setHotspots(getDefaultHotspotsClient());
+        setWeather(getDefaultWeatherClient());
       } finally {
         setLoading(false);
       }
