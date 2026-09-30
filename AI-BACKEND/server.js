@@ -8,11 +8,32 @@ const { calculateRisk } = require("../INTELLIGENCE-BACKEND/helpers/riskEngine");
 const pollutionEvents = require("../INTELLIGENCE-BACKEND/data/pollution_events.json");
 const countryConfig = require("../INTELLIGENCE-BACKEND/config/countryConfig");
 
+const fs = require("fs");
+const { execSync } = require("child_process");
+
+dotenv.config({ path: path.join(__dirname, "..", ".env") });
 dotenv.config({ path: path.join(__dirname, ".env") });
 
 const app = express();
-const PORT = 5000;
+const PORT = process.env.DEFAULT_APP_PORT
+  ? parseInt(process.env.DEFAULT_APP_PORT, 10)
+  : (process.env.PORT && process.env.PORT !== "8080" ? parseInt(process.env.PORT, 10) : 3000);
+const HOST = "0.0.0.0";
 const frontendDist = path.join(__dirname, "..", "FRONTEND", "dist");
+
+if (!fs.existsSync(path.join(frontendDist, "index.html"))) {
+  console.log("Frontend build not found; compiling frontend...");
+  try {
+    execSync("npm run build --prefix FRONTEND", { stdio: "inherit" });
+  } catch (err) {
+    console.warn("Auto-build frontend failed:", err.message);
+  }
+}
+
+// Health check endpoints for Cloud Run and ingress probes
+app.get(["/health", "/healthz", "/api/health"], (req, res) => {
+  res.status(200).json({ status: "ok" });
+});
 
 // ==================================================
 // MIDDLEWARE
@@ -29,19 +50,33 @@ const upload = multer({
 // GEMINI
 // ==================================================
 
-const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY
-});
+let ai = null;
+if (process.env.GEMINI_API_KEY) {
+  try {
+    ai = new GoogleGenAI({
+      apiKey: process.env.GEMINI_API_KEY
+    });
+  } catch (error) {
+    console.warn("Failed to initialize GoogleGenAI:", error.message);
+  }
+}
 
 // ==================================================
 // TEST GEMINI
 // ==================================================
 
 app.get("/api/test-ai", async (req, res) => {
+  if (!ai || !process.env.GEMINI_API_KEY) {
+    return res.status(503).json({
+      success: false,
+      error: "GEMINI_API_KEY is not configured"
+    });
+  }
+
   try {
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.7-flash",
+      model: "gemini-3.8-flash",
 
       contents: [
         {
@@ -312,9 +347,8 @@ Example:
       // ------------------------------------------------
 
       const models = [
-        "gemini-3.7-flash",
-        "gemini-3.6-flash",
-        "gemini-3.5-flash"
+        "gemini-3.8-flash",
+        "gemini-3.1-flash-lite"
       ];
 
       let response = null;
@@ -327,62 +361,64 @@ Example:
       // TRY GEMINI MODELS
       // ------------------------------------------------
 
-      for (const model of models) {
+      if (ai && process.env.GEMINI_API_KEY) {
+        for (const model of models) {
 
-        try {
+          try {
 
-          console.log(
-            `Trying Gemini model: ${model}`
-          );
+            console.log(
+              `Trying Gemini model: ${model}`
+            );
 
-          response =
-            await ai.models.generateContent({
+            response =
+              await ai.models.generateContent({
 
-              model: model,
+                model: model,
 
-              contents: [
-                {
-                  role: "user",
+                contents: [
+                  {
+                    role: "user",
 
-                  parts: [
+                    parts: [
 
-                    {
-                      text: prompt
-                    },
+                      {
+                        text: prompt
+                      },
 
-                    {
-                      inlineData: {
-                        mimeType: req.file.mimetype,
-                        data: imageBase64
+                      {
+                        inlineData: {
+                          mimeType: req.file.mimetype,
+                          data: imageBase64
+                        }
                       }
-                    }
 
-                  ]
-                }
-              ]
+                    ]
+                  }
+                ]
 
-            });
+              });
 
-          successfulModel = model;
+            successfulModel = model;
 
-          console.log(
-            `Gemini success: ${model}`
-          );
+            console.log(
+              `Gemini success: ${model}`
+            );
 
-          break;
+            break;
+
+          }
+
+          catch (error) {
+
+            lastError = error;
+
+            console.log(
+              `Gemini ${model} failed: ${error.message}`
+            );
+
+          }
 
         }
-
-        catch (error) {
-
-          lastError = error;
-
-          console.log(
-            `Gemini ${model} failed: ${error.message}`
-          );
-
-        }
-
       }
 
       // ==================================================
@@ -742,25 +778,43 @@ app.use("/api", (req, res) => {
 
 app.use(express.static(frontendDist));
 
-app.get("/{*splat}", (req, res) => {
-  res.sendFile(path.join(frontendDist, "index.html"), (error) => {
-    if (error && !res.headersSent) {
-      res.status(404).json({
-        success: false,
-        error: "Frontend build not found. Run npm run build --prefix FRONTEND."
-      });
-    }
-  });
+app.use((req, res) => {
+  if (req.method === "GET" || req.method === "HEAD") {
+    res.sendFile(path.join(frontendDist, "index.html"), (error) => {
+      if (error && !res.headersSent) {
+        res.status(404).json({
+          success: false,
+          error: "Frontend build not found. Run npm run build --prefix FRONTEND."
+        });
+      }
+    });
+  } else {
+    res.status(404).json({
+      success: false,
+      error: "Not found"
+    });
+  }
 });
 
 // ==================================================
 // START SERVER
 // ==================================================
 
-app.listen(PORT, () => {
-
+const server = app.listen(PORT, HOST, () => {
   console.log(
-    `VAYU Backend running on http://localhost:${PORT}`
+    `VAYU Backend running on http://${HOST}:${PORT}`
   );
-
 });
+
+server.on("error", (err) => {
+  console.error("VAYU server listen error:", err);
+});
+
+process.on("unhandledRejection", (reason) => {
+  console.error("Unhandled Rejection:", reason);
+});
+process.on("uncaughtException", (error) => {
+  console.error("Uncaught Exception:", error);
+});
+
+module.exports = app;

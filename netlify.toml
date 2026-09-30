@@ -1,0 +1,9 @@
+[build]
+  command = "npm run build"
+  publish = "FRONTEND/dist"
+
+# Single-Page Application (SPA) client-side routing fallback
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

@@ -1,0 +1,23 @@
+{
+  "name": "vayu",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "FRONTEND",
+    "AI-BACKEND",
+    "INTELLIGENCE-BACKEND"
+  ],
+  "scripts": {
+    "dev": "npm run build --prefix FRONTEND && node server.js",
+    "build": "npm run build --prefix FRONTEND",
+    "start": "node server.js",
+    "lint": "node --check server.js && node --check AI-BACKEND/server.js"
+  },
+  "dependencies": {
+    "@google/genai": "^2.24.0",
+    "cors": "^2.8.6",
+    "dotenv": "^18.0.4",
+    "express": "^5.2.1",
+    "multer": "^2.4.0"
+  }
+}
