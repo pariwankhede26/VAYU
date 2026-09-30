@@ -1,0 +1,7 @@
+{
+  "name": "VAYU",
+  "description": "VAYU transforms citizen pollution evidence into localized environmental intelligence.",
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

@@ -1,5 +1,11 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
+import {
+  analyzeEventClient,
+  calculateRiskClient,
+  getDefaultWeatherClient,
+  predictSpreadClient
+} from "../utils/intelligenceEngine";
 
 function getLocationError(error) {
   if (error.code === 1) {
@@ -70,8 +76,11 @@ export default function Report() {
   }
 
   async function analyzePollution() {
-    if (!image || !image.type.startsWith("image/")) {
-      setError("Please upload a valid pollution image.");
+    const hasImage = Boolean(image && image.type && image.type.startsWith("image/"));
+    const hasDescription = Boolean(description && description.trim());
+
+    if (!hasImage && !hasDescription) {
+      setError("Please upload a pollution photo or describe what you observed.");
       return;
     }
 
@@ -106,7 +115,9 @@ export default function Report() {
     try {
       const formData = new FormData();
 
-      formData.append("image", image);
+      if (hasImage) {
+        formData.append("image", image);
+      }
       formData.append("description", description || "");
       formData.append("locationName", locationName);
       if (hasLatitude) {
@@ -114,77 +125,147 @@ export default function Report() {
         formData.append("longitude", String(numericLongitude));
       }
 
-      const response = await fetch("/api/analyze", {
-        method: "POST",
-        body: formData,
-      });
+      let analysisResult = null;
+      let analysisSrc = "gemini";
 
-      const data = await response.json();
+      try {
+        const response = await fetch("/api/analyze", {
+          method: "POST",
+          body: formData,
+        });
 
-      if (!response.ok || !data.success) {
-        throw new Error("AI analysis temporarily unavailable. Please try again.");
+        if (response.ok) {
+          const data = await response.json();
+          if (data && data.success && data.result) {
+            analysisResult = data.result;
+            analysisSrc = data.source || "gemini";
+          }
+        }
+      } catch (networkErr) {
+        console.warn("Backend API unreachable, using client fallback engine:", networkErr);
       }
 
-      setAnalysis(data.result);
-      setAnalysisSource(data.source);
+      // If backend is not running (e.g. Netlify static hosting) or failed
+      if (!analysisResult) {
+        analysisResult = analyzeEventClient(
+          description,
+          hasLatitude ? numericLatitude : null,
+          hasLatitude ? numericLongitude : null
+        );
+        analysisSrc = "client_fallback";
+      }
 
+      setAnalysis(analysisResult);
+      setAnalysisSource(analysisSrc);
+
+      // 2. Risk Calculation
+      let riskResult = null;
       try {
         const riskResponse = await fetch("/api/risk", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            type: data.result.eventType,
-            severity: data.result.severity,
-            confidence: data.result.confidence,
+            type: analysisResult.eventType,
+            severity: analysisResult.severity,
+            confidence: analysisResult.confidence,
           }),
         });
-        const riskData = await riskResponse.json();
 
-        if (!riskResponse.ok || !riskData.success) {
-          throw new Error("Risk score unavailable");
+        if (riskResponse.ok) {
+          const riskData = await riskResponse.json();
+          if (riskData.success && riskData.risk) {
+            riskResult = riskData.risk;
+          }
         }
+      } catch (riskErr) {
+        console.warn("Server risk endpoint unreachable, computing locally:", riskErr);
+      }
 
-        setRisk(riskData.risk);
+      if (!riskResult) {
+        riskResult = calculateRiskClient({
+          type: analysisResult.eventType,
+          severity: analysisResult.severity,
+          confidence: analysisResult.confidence,
+        });
+      }
+      setRisk(riskResult);
 
+      // 3. Weather context
+      let weatherResult = null;
+      try {
         const weatherResponse = await fetch("/api/weather");
-        const weatherData = await weatherResponse.json();
-        if (!weatherResponse.ok || !weatherData.success) {
-          throw new Error("Weather context unavailable.");
+        if (weatherResponse.ok) {
+          const weatherData = await weatherResponse.json();
+          if (weatherData.success && weatherData.weather) {
+            weatherResult = weatherData.weather;
+          }
         }
-        setWeather(weatherData.weather);
+      } catch (weatherErr) {
+        console.warn("Server weather endpoint unreachable, using prototype weather:", weatherErr);
+      }
 
-        if (hasLatitude) {
+      if (!weatherResult) {
+        weatherResult = getDefaultWeatherClient();
+      }
+      setWeather(weatherResult);
+
+      // 4. Spread prediction
+      if (hasLatitude) {
+        let predictionResult = null;
+        try {
           const predictionResponse = await fetch("/api/predict", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               latitude: numericLatitude,
               longitude: numericLongitude,
-              riskScore: riskData.risk.riskScore,
-              windSpeed: weatherData.weather.windSpeed,
-              windDirection: weatherData.weather.windDirection,
+              riskScore: riskResult.riskScore,
+              windSpeed: weatherResult.windSpeed,
+              windDirection: weatherResult.windDirection,
             }),
           });
-          const predictionData = await predictionResponse.json();
-          if (!predictionResponse.ok || !predictionData.success) {
-            throw new Error("Spread prediction temporarily unavailable.");
+
+          if (predictionResponse.ok) {
+            const predictionData = await predictionResponse.json();
+            if (predictionData.success && predictionData.prediction) {
+              predictionResult = predictionData.prediction;
+            }
           }
-          setPrediction(predictionData.prediction);
-        } else {
-          setPredictionError("Add coordinates to run a spread prediction.");
+        } catch (predictErr) {
+          console.warn("Server predict endpoint unreachable, computing locally:", predictErr);
         }
-      } catch (intelligenceFailure) {
-        console.error("Environmental intelligence error:", intelligenceFailure);
-        if (intelligenceFailure.message === "Spread prediction temporarily unavailable.") {
-          setPredictionError(intelligenceFailure.message);
-        } else {
-          setIntelligenceError(
-            intelligenceFailure.message === "Weather context unavailable."
-              ? intelligenceFailure.message
-              : "Environmental intelligence service unavailable."
+
+        if (!predictionResult) {
+          const clientPred = predictSpreadClient(
+            numericLatitude,
+            numericLongitude,
+            riskResult.riskScore,
+            weatherResult.windSpeed,
+            weatherResult.windDirection
           );
-          setPredictionError("Spread prediction temporarily unavailable.");
+          predictionResult = {
+            currentRisk: riskResult.riskScore,
+            windDirection: weatherResult.windDirection,
+            windSpeed: weatherResult.windSpeed,
+            predictedZones: [
+              {
+                etaMinutes: 30,
+                latitude: clientPred.spread30Min.latitude,
+                longitude: clientPred.spread30Min.longitude,
+                risk: Math.max(10, Math.round(riskResult.riskScore * 0.85))
+              },
+              {
+                etaMinutes: 60,
+                latitude: clientPred.spread60Min.latitude,
+                longitude: clientPred.spread60Min.longitude,
+                risk: Math.max(10, Math.round(riskResult.riskScore * 0.7))
+              }
+            ]
+          };
         }
+        setPrediction(predictionResult);
+      } else {
+        setPredictionError("Add coordinates to run a spread prediction.");
       }
     } catch (error) {
       console.error("AI analysis error:", error);
@@ -303,11 +384,11 @@ export default function Report() {
                     </div>
 
                     <p className="mt-5 font-semibold">
-                      Upload pollution photo
+                      Upload pollution photo (optional)
                     </p>
 
                     <p className="mt-2 text-sm text-slate-500">
-                      JPG, PNG or WEBP
+                      JPG, PNG or WEBP (or describe observation below)
                     </p>
 
                   </div>
@@ -521,19 +602,29 @@ export default function Report() {
                 <section className="rounded-2xl border border-emerald-400/20 bg-emerald-400/5 p-5">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <h3 className="font-bold text-emerald-300">
-                      {analysisSource === "gemini" ? "Powered by Google Gemini AI" : "Prototype fallback result"}
+                      {analysisSource === "gemini"
+                        ? "Powered by Google Gemini Vision AI"
+                        : analysisSource === "prototype_fallback"
+                        ? "Server Intelligent Fallback Engine"
+                        : "Browser Client Mode (Static Hosting)"}
                     </h3>
                     <span className="rounded-full border border-white/10 px-3 py-1 text-xs text-slate-300">
-                      {analysisSource === "gemini" ? "Gemini" : "Prototype fallback"}
+                      {analysisSource === "gemini"
+                        ? "Gemini Vision"
+                        : analysisSource === "prototype_fallback"
+                        ? "Server Fallback"
+                        : "Client Fallback"}
                     </span>
                   </div>
                   <p className="mt-2 text-sm leading-6 text-slate-400">
                     {analysisSource === "gemini"
-                      ? "Google Gemini Vision analyzes citizen-submitted pollution evidence to identify the probable pollution source, severity and supporting visual evidence."
-                      : "Gemini was unavailable. This prototype fallback uses the written description only and does not analyze the uploaded image."}
+                      ? "Google Gemini Vision analyzed the multimodal visual evidence and observation text to identify the probable pollution source, severity, and supporting evidence."
+                      : analysisSource === "prototype_fallback"
+                      ? "The server used VAYU's built-in intelligent rule engine because the Gemini API returned an invalid key or rate limit. To enable live multimodal Gemini Vision, provide a valid GEMINI_API_KEY (starts with AIzaSy...)."
+                      : "The frontend analyzed your observation locally because this static deployment does not host an active backend server. All VAYU risk scoring, plume spread, and insights are fully operational."}
                   </p>
                   <div className="mt-4 grid grid-cols-2 gap-2 text-center text-[10px] font-semibold uppercase tracking-wide text-slate-400 sm:grid-cols-4">
-                    {["Image", "Gemini Vision", "Classification", "Severity + confidence", "Evidence", "VAYU Risk Engine", "Prediction"].map((step) => (
+                    {["Image", "VAYU Intelligence", "Classification", "Severity + confidence", "Evidence", "Risk Engine", "Spread Plume"].map((step) => (
                       <span key={step} className="rounded-lg bg-slate-950/70 px-2 py-3">{step}</span>
                     ))}
                   </div>

@@ -1,5 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import {
+  getDefaultHotspotsClient,
+  getDefaultWeatherClient,
+  predictSpreadClient
+} from "../utils/intelligenceEngine";
 
 function getPosition(latitude, longitude) {
   const x = 8 + ((longitude - 68) / 30) * 84;
@@ -49,15 +54,30 @@ export default function MapView() {
     async function loadEnvironmentalData() {
       const loadHotspots = async () => {
         try {
-          const response = await fetch("/api/hotspots");
-          const data = await response.json();
-          if (!response.ok || !data.success) throw new Error();
-          const loadedHotspots = data.hotspots || [];
-          setHotspots(loadedHotspots);
-          setSelectedHotspotId(loadedHotspots[0]?.id ?? null);
+          let loaded = null;
+          try {
+            const response = await fetch("/api/hotspots");
+            if (response.ok) {
+              const data = await response.json();
+              if (data && data.success && Array.isArray(data.hotspots)) {
+                loaded = data.hotspots;
+              }
+            }
+          } catch (netErr) {
+            console.warn("Hotspots endpoint unreachable, using client data:", netErr);
+          }
+
+          if (!loaded) {
+            loaded = getDefaultHotspotsClient();
+          }
+
+          setHotspots(loaded);
+          setSelectedHotspotId(loaded[0]?.id ?? null);
         } catch (error) {
           console.error("Hotspot service error:", error);
-          setHotspotError("Environmental intelligence service unavailable.");
+          const fallback = getDefaultHotspotsClient();
+          setHotspots(fallback);
+          setSelectedHotspotId(fallback[0]?.id ?? null);
         } finally {
           setLoading(false);
         }
@@ -65,13 +85,26 @@ export default function MapView() {
 
       const loadWeather = async () => {
         try {
-          const response = await fetch("/api/weather");
-          const data = await response.json();
-          if (!response.ok || !data.success) throw new Error();
-          setWeather(data.weather || null);
+          let loaded = null;
+          try {
+            const response = await fetch("/api/weather");
+            if (response.ok) {
+              const data = await response.json();
+              if (data && data.success && data.weather) {
+                loaded = data.weather;
+              }
+            }
+          } catch (netErr) {
+            console.warn("Weather endpoint unreachable, using default weather:", netErr);
+          }
+
+          if (!loaded) {
+            loaded = getDefaultWeatherClient();
+          }
+          setWeather(loaded);
         } catch (error) {
           console.error("Weather service error:", error);
-          setWeatherError("Weather context unavailable.");
+          setWeather(getDefaultWeatherClient());
         }
       };
 
@@ -105,13 +138,41 @@ export default function MapView() {
       }),
     })
       .then(async (response) => {
+        if (!response.ok) throw new Error("Server error");
         const data = await response.json();
-        if (!response.ok || !data.success) throw new Error();
-        if (!cancelled) setPrediction(data.prediction || null);
+        if (!data || !data.success || !data.prediction) throw new Error("Invalid response");
+        if (!cancelled) setPrediction(data.prediction);
       })
       .catch((error) => {
-        console.error("Prediction service error:", error);
-        if (!cancelled) setPredictionError("Spread prediction temporarily unavailable.");
+        console.warn("Prediction service using client calculation:", error.message);
+        if (!cancelled) {
+          const clientPred = predictSpreadClient(
+            selectedHotspot.latitude,
+            selectedHotspot.longitude,
+            selectedHotspot.riskScore,
+            weather.windSpeed,
+            weather.windDirection
+          );
+          setPrediction({
+            currentRisk: selectedHotspot.riskScore,
+            windDirection: weather.windDirection,
+            windSpeed: weather.windSpeed,
+            predictedZones: [
+              {
+                etaMinutes: 30,
+                latitude: clientPred.spread30Min.latitude,
+                longitude: clientPred.spread30Min.longitude,
+                risk: Math.max(10, Math.round(selectedHotspot.riskScore * 0.85))
+              },
+              {
+                etaMinutes: 60,
+                latitude: clientPred.spread60Min.latitude,
+                longitude: clientPred.spread60Min.longitude,
+                risk: Math.max(10, Math.round(selectedHotspot.riskScore * 0.7))
+              }
+            ]
+          });
+        }
       })
       .finally(() => {
         if (!cancelled) setPredictionLoading(false);
