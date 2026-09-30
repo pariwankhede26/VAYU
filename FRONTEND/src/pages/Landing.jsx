@@ -1,15 +1,13 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
-const INTELLIGENCE_API_URL = "http://localhost:5001";
-
 export default function Landing() {
   const [highestRisk, setHighestRisk] = useState(null);
   const [countries, setCountries] = useState({});
   const [selectedCountry, setSelectedCountry] = useState("India");
 
   useEffect(() => {
-    fetch(`${INTELLIGENCE_API_URL}/api/hotspots`)
+    fetch("/api/hotspots")
       .then(async (response) => {
         const data = await response.json();
         if (!response.ok || !data.success) throw new Error("Hotspots unavailable");
@@ -20,7 +18,7 @@ export default function Landing() {
       })
       .catch((error) => console.error("Landing hotspot load failed:", error));
 
-    fetch(`${INTELLIGENCE_API_URL}/api/country-config`)
+    fetch("/api/country-config")
       .then(async (response) => {
         const data = await response.json();
         if (!response.ok || !data.success) throw new Error("Country context unavailable");

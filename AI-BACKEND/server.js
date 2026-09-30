@@ -2,12 +2,17 @@ const express = require("express");
 const cors = require("cors");
 const dotenv = require("dotenv");
 const multer = require("multer");
+const path = require("path");
 const { GoogleGenAI } = require("@google/genai");
+const { calculateRisk } = require("../INTELLIGENCE-BACKEND/helpers/riskEngine");
+const pollutionEvents = require("../INTELLIGENCE-BACKEND/data/pollution_events.json");
+const countryConfig = require("../INTELLIGENCE-BACKEND/config/countryConfig");
 
-dotenv.config();
+dotenv.config({ path: path.join(__dirname, ".env") });
 
 const app = express();
 const PORT = 5000;
+const frontendDist = path.join(__dirname, "..", "FRONTEND", "dist");
 
 // ==================================================
 // MIDDLEWARE
@@ -26,16 +31,6 @@ const upload = multer({
 
 const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY
-});
-
-// ==================================================
-// HOME
-// ==================================================
-
-app.get("/", (req, res) => {
-  res.json({
-    message: "VAYU Backend is running!"
-  });
 });
 
 // ==================================================
@@ -537,6 +532,226 @@ Example:
 
   }
 );
+
+// ==================================================
+// ENVIRONMENTAL INTELLIGENCE APIs
+// ==================================================
+
+app.get("/api/hotspots", (req, res) => {
+  const hotspots = pollutionEvents.map((event) => {
+    const risk = calculateRisk(event);
+
+    return {
+      id: event.id,
+      city: event.city,
+      latitude: event.latitude,
+      longitude: event.longitude,
+      type: event.type,
+      severity: event.severity,
+      confidence: event.confidence,
+      riskScore: risk.riskScore,
+      riskLevel: risk.riskLevel
+    };
+  });
+
+  res.json({
+    success: true,
+    source: "prototype_data",
+    hotspots
+  });
+});
+
+app.get("/api/weather", (req, res) => {
+  const weather = {
+    temperature: 31,
+    humidity: 58,
+    windSpeed: 14,
+    windDirection: "NW",
+    condition: "Partly Cloudy"
+  };
+
+  res.json({
+    success: true,
+    source: "prototype_data",
+    notice: "Prototype weather data",
+    weather
+  });
+});
+
+app.post("/api/predict", (req, res) => {
+  const {
+    latitude,
+    longitude,
+    riskScore,
+    windSpeed,
+    windDirection
+  } = req.body;
+
+  if (
+    !Number.isFinite(latitude) ||
+    latitude < -90 ||
+    latitude > 90 ||
+    !Number.isFinite(longitude) ||
+    longitude < -180 ||
+    longitude > 180 ||
+    !Number.isFinite(riskScore) ||
+    riskScore < 0 ||
+    riskScore > 100 ||
+    !Number.isFinite(windSpeed) ||
+    windSpeed < 0 ||
+    typeof windDirection !== "string" ||
+    !["N", "S", "E", "W", "NE", "NW", "SE", "SW"].includes(
+      windDirection.toUpperCase()
+    )
+  ) {
+    return res.status(400).json({
+      success: false,
+      message:
+        "latitude, longitude, riskScore, windSpeed and windDirection are required"
+    });
+  }
+
+  const distance30 = windSpeed * 0.5;
+  const distance60 = windSpeed;
+  const coordinateChange30 = distance30 / 111;
+  const coordinateChange60 = distance60 / 111;
+  let latitude30 = latitude;
+  let longitude30 = longitude;
+  let latitude60 = latitude;
+  let longitude60 = longitude;
+
+  switch (windDirection.toUpperCase()) {
+    case "N":
+      latitude30 += coordinateChange30;
+      latitude60 += coordinateChange60;
+      break;
+    case "S":
+      latitude30 -= coordinateChange30;
+      latitude60 -= coordinateChange60;
+      break;
+    case "E":
+      longitude30 += coordinateChange30;
+      longitude60 += coordinateChange60;
+      break;
+    case "W":
+      longitude30 -= coordinateChange30;
+      longitude60 -= coordinateChange60;
+      break;
+    case "NE":
+      latitude30 += coordinateChange30 * 0.7;
+      longitude30 += coordinateChange30 * 0.7;
+      latitude60 += coordinateChange60 * 0.7;
+      longitude60 += coordinateChange60 * 0.7;
+      break;
+    case "NW":
+      latitude30 += coordinateChange30 * 0.7;
+      longitude30 -= coordinateChange30 * 0.7;
+      latitude60 += coordinateChange60 * 0.7;
+      longitude60 -= coordinateChange60 * 0.7;
+      break;
+    case "SE":
+      latitude30 -= coordinateChange30 * 0.7;
+      longitude30 += coordinateChange30 * 0.7;
+      latitude60 -= coordinateChange60 * 0.7;
+      longitude60 += coordinateChange60 * 0.7;
+      break;
+    case "SW":
+      latitude30 -= coordinateChange30 * 0.7;
+      longitude30 -= coordinateChange30 * 0.7;
+      latitude60 -= coordinateChange60 * 0.7;
+      longitude60 -= coordinateChange60 * 0.7;
+      break;
+  }
+
+  const risk30 = Math.max(Math.round(riskScore * 0.88), 0);
+  const risk60 = Math.max(Math.round(riskScore * 0.75), 0);
+
+  res.json({
+    success: true,
+    source: "prototype_prediction",
+    prediction: {
+      currentRisk: riskScore,
+      windDirection: windDirection.toUpperCase(),
+      windSpeed,
+      predictedZones: [
+        {
+          latitude: Number(latitude30.toFixed(4)),
+          longitude: Number(longitude30.toFixed(4)),
+          risk: risk30,
+          etaMinutes: 30
+        },
+        {
+          latitude: Number(latitude60.toFixed(4)),
+          longitude: Number(longitude60.toFixed(4)),
+          risk: risk60,
+          etaMinutes: 60
+        }
+      ]
+    }
+  });
+});
+
+app.post("/api/risk", (req, res) => {
+  const { type, severity, confidence } = req.body;
+  const validSeverities = ["low", "moderate", "high", "critical"];
+  const validTypes = [
+    "industrial_emission",
+    "crop_burning",
+    "garbage_burning",
+    "construction_dust",
+    "vehicle_emission",
+    "fire_smoke",
+    "dust_storm",
+    "other",
+    "unclear"
+  ];
+
+  if (
+    !validTypes.includes(type) ||
+    !validSeverities.includes(severity) ||
+    !Number.isFinite(confidence) ||
+    confidence < 0 ||
+    confidence > 100
+  ) {
+    return res.status(400).json({
+      success: false,
+      message: "type, severity and confidence (0-100) are required"
+    });
+  }
+
+  res.json({
+    success: true,
+    source: "vayu_risk_engine",
+    risk: calculateRisk({ type, severity, confidence })
+  });
+});
+
+app.get("/api/country-config", (req, res) => {
+  res.json({
+    success: true,
+    countries: countryConfig
+  });
+});
+
+app.use("/api", (req, res) => {
+  res.status(404).json({
+    success: false,
+    error: "API route not found"
+  });
+});
+
+app.use(express.static(frontendDist));
+
+app.get("/{*splat}", (req, res) => {
+  res.sendFile(path.join(frontendDist, "index.html"), (error) => {
+    if (error && !res.headersSent) {
+      res.status(404).json({
+        success: false,
+        error: "Frontend build not found. Run npm run build --prefix FRONTEND."
+      });
+    }
+  });
+});
 
 // ==================================================
 // START SERVER

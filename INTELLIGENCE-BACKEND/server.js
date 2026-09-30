@@ -6,7 +6,6 @@ const pollutionEvents = require("./data/pollution_events.json");
 const countryConfig = require("./config/countryConfig");
 
 const app = express();
-const PORT = 5001;
 
 // Middleware
 app.use(cors());
@@ -286,10 +285,4 @@ app.get("/api/country-config", (req, res) => {
   });
 });
 
-// START SERVER
-// ------------------------------------
-app.listen(PORT, () => {
-  console.log(
-    `VAYU Person 3 Backend running on http://localhost:${PORT}`
-  );
-});
+module.exports = app;

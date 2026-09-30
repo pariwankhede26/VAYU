@@ -1,8 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
-const INTELLIGENCE_API_URL = "http://localhost:5001";
-
 export default function Dashboard() {
   const [hotspots, setHotspots] = useState([]);
   const [weather, setWeather] = useState(null);
@@ -14,8 +12,8 @@ export default function Dashboard() {
     async function loadDashboardData() {
       try {
         const [hotspotResponse, weatherResponse] = await Promise.all([
-          fetch(`${INTELLIGENCE_API_URL}/api/hotspots`),
-          fetch(`${INTELLIGENCE_API_URL}/api/weather`),
+          fetch("/api/hotspots"),
+          fetch("/api/weather"),
         ]);
         const [hotspotData, weatherData] = await Promise.all([
           hotspotResponse.json(),

@@ -5,8 +5,8 @@ This document describes the implementation present in the repository. It does no
 ## Existing Components
 
 - `FRONTEND/` contains the React/Vite application and the Landing, Report, Map, and Dashboard pages.
-- `AI-BACKEND/server.js` serves the Gemini-backed image-analysis endpoint on port 5000.
-- `INTELLIGENCE-BACKEND/server.js` serves hotspot, weather, risk-score, country-context, and prediction endpoints on port 5001.
+- `AI-BACKEND/server.js` is the only production server. It serves the Vite build and all APIs on port 5000, including Gemini-backed image analysis.
+- `INTELLIGENCE-BACKEND/server.js` retains the original intelligence routes as an importable app but does not start a server. The production server reuses the existing risk engine, country configuration, and pollution dataset from this directory.
 - `INTELLIGENCE-BACKEND/helpers/riskEngine.js` is the shared VAYU Risk Score implementation.
 
 ## Gemini Integration
@@ -19,9 +19,9 @@ The analysis schema contains event type, severity, confidence, possible source, 
 
 ## Frontend Integration
 
-The Report page sends a selected image and context to port 5000, then sends the returned classification to the existing risk engine endpoint. It requests browser location only on explicit user action and accepts manual coordinates or an explicitly labeled prototype location. Weather and prediction context are displayed only when their endpoints return successfully.
+The frontend uses relative `/api/...` requests. The Report page sends a selected image and context to the main server, then sends the returned classification to the risk engine endpoint. It requests browser location only on explicit user action and accepts manual coordinates or an explicitly labeled prototype location. Weather and prediction context are displayed only when their endpoints return successfully.
 
-The map and dashboard read hotspot/weather data from port 5001. The map remains a schematic visualization; its markers and forecast zones use API coordinates but are not a geographically precise map.
+The map and dashboard read hotspot/weather data from the same server. For optional Vite development, `FRONTEND/vite.config.js` proxies `/api` to port 5000. The map remains a schematic visualization; its markers and forecast zones use API coordinates but are not a geographically precise map.
 
 ## Hotspot Intelligence
 
@@ -57,4 +57,4 @@ Repository-level setup, architecture, limitations, and dependency-license metada
 
 ## Testing
 
-The frontend production build is available with `npm run build` from `FRONTEND/`. Both backend files can be syntax checked with `node --check server.js` from their respective directories. The package manifests do not define automated project test suites; their current `test` scripts are placeholders.
+The frontend production build is available with `npm run build --prefix FRONTEND`. The main server can be syntax checked with `node --check AI-BACKEND/server.js`; the retained intelligence app can be checked with `node --check INTELLIGENCE-BACKEND/server.js`. The package manifests do not define automated project test suites; their current `test` scripts are placeholders.

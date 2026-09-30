@@ -1,9 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 
-const AI_API_URL = "http://localhost:5000";
-const INTELLIGENCE_API_URL = "http://localhost:5001";
-
 function getLocationError(error) {
   if (error.code === 1) {
     return "Location permission unavailable. Please select your location manually.";
@@ -117,13 +114,10 @@ export default function Report() {
         formData.append("longitude", String(numericLongitude));
       }
 
-      const response = await fetch(
-        `${AI_API_URL}/api/analyze`,
-        {
-          method: "POST",
-          body: formData,
-        }
-      );
+      const response = await fetch("/api/analyze", {
+        method: "POST",
+        body: formData,
+      });
 
       const data = await response.json();
 
@@ -135,7 +129,7 @@ export default function Report() {
       setAnalysisSource(data.source);
 
       try {
-        const riskResponse = await fetch(`${INTELLIGENCE_API_URL}/api/risk`, {
+        const riskResponse = await fetch("/api/risk", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -152,7 +146,7 @@ export default function Report() {
 
         setRisk(riskData.risk);
 
-        const weatherResponse = await fetch(`${INTELLIGENCE_API_URL}/api/weather`);
+        const weatherResponse = await fetch("/api/weather");
         const weatherData = await weatherResponse.json();
         if (!weatherResponse.ok || !weatherData.success) {
           throw new Error("Weather context unavailable.");
@@ -160,20 +154,17 @@ export default function Report() {
         setWeather(weatherData.weather);
 
         if (hasLatitude) {
-          const predictionResponse = await fetch(
-            `${INTELLIGENCE_API_URL}/api/predict`,
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                latitude: numericLatitude,
-                longitude: numericLongitude,
-                riskScore: riskData.risk.riskScore,
-                windSpeed: weatherData.weather.windSpeed,
-                windDirection: weatherData.weather.windDirection,
-              }),
-            }
-          );
+          const predictionResponse = await fetch("/api/predict", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              latitude: numericLatitude,
+              longitude: numericLongitude,
+              riskScore: riskData.risk.riskScore,
+              windSpeed: weatherData.weather.windSpeed,
+              windDirection: weatherData.weather.windDirection,
+            }),
+          });
           const predictionData = await predictionResponse.json();
           if (!predictionResponse.ok || !predictionData.success) {
             throw new Error("Spread prediction temporarily unavailable.");

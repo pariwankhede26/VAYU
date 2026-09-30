@@ -22,18 +22,9 @@ If Gemini calls fail or return invalid JSON, the route may return a description-
 
 ## Architecture
 
-```text
-Frontend (Vite, default :5173)
-  ├── AI-BACKEND (:5000) -> Google Gemini Vision
-  └── INTELLIGENCE-BACKEND (:5001)
-        ├── Prototype hotspot records
-        ├── Prototype weather context
-        ├── VAYU Risk Engine
-        ├── Simplified spread prediction
-        └── Country-context configuration
-```
+Production uses one Express server on port 5000: `AI-BACKEND/server.js` serves the Vite production build from `FRONTEND/dist` and handles every `/api` route. It imports the existing risk engine, country configuration, and simulated pollution dataset from `INTELLIGENCE-BACKEND`; those source files remain in place. `INTELLIGENCE-BACKEND/server.js` is retained for reference but is not required for production.
 
-The frontend calls the two backends directly. CORS is enabled in both Express services. No database, authentication, or production deployment configuration is included.
+The frontend uses relative `/api/...` requests. Vite remains the build tool; during optional Vite development, its dev server proxies API requests to port 5000. In production, React Router routes are served through the Express SPA fallback. No database, authentication, or production deployment configuration is included.
 
 ## End-to-End Flow
 
@@ -41,8 +32,8 @@ The frontend calls the two backends directly. CORS is enabled in both Express se
 2. Browser geolocation is requested only after the user clicks **Use my location**. Manual coordinates and an explicitly labeled Jaipur prototype location are also available; location is optional.
 3. The report image and context are sent to `POST /api/analyze` on port 5000.
 4. Gemini Vision classifies the image, or the backend identifies a prototype text fallback in its response.
-5. The frontend sends the resulting event type, severity, and confidence to `POST /api/risk` on port 5001.
-6. The report obtains prototype weather context from `GET /api/weather` and, when coordinates are available, calls `POST /api/predict`.
+5. The frontend sends the resulting event type, severity, and confidence to `POST /api/risk` on port 5000.
+6. The report obtains prototype weather context from `GET /api/weather` and, when coordinates are available, calls `POST /api/predict` on port 5000.
 7. The map loads `GET /api/hotspots`, weather, and predictions for a selected record.
 
 ## VAYU Risk Score
@@ -75,47 +66,30 @@ The VAYU Risk Score is a 0–100 environmental decision-support indicator, not o
 
 ## Setup Instructions
 
-Requirements: Node.js 20.19 or newer and npm. Install each app's locked dependencies with `npm ci` from its directory. The Gemini API key must be provided to the AI backend through its existing environment-variable name. Do not put keys in frontend code or commit local environment files.
+Requirements: Node.js 20.19 or newer and npm. Install dependencies in `AI-BACKEND` and `FRONTEND` with `npm install` from each directory. The Gemini API key must be provided to the AI backend through its existing environment-variable name. Do not put keys in frontend code or commit local environment files.
 
 ## Environment Variables
 
-The AI backend reads `GEMINI_API_KEY` via `dotenv`:
+The AI backend reads `GEMINI_API_KEY` via `dotenv` from `AI-BACKEND/.env`:
 
 ```dotenv
 GEMINI_API_KEY=your_key_here
 ```
 
-This is an example placeholder, not a real key. The current frontend uses the local backend URLs and does not require API keys.
+This is an example placeholder, not a real key. The frontend does not contain or require API keys.
 
-## Running Locally
+## Running in Production Mode
 
-Run each command in its own terminal from the repository root:
-
-AI backend:
+From the repository root, install dependencies, build the React app, then start only the main server:
 
 ```powershell
-cd .\AI-BACKEND
-npm ci
-node server.js
+npm install --prefix AI-BACKEND
+npm install --prefix FRONTEND
+npm run build --prefix FRONTEND
+node AI-BACKEND/server.js
 ```
 
-Intelligence backend:
-
-```powershell
-cd .\INTELLIGENCE-BACKEND
-npm ci
-node server.js
-```
-
-Frontend:
-
-```powershell
-cd .\FRONTEND
-npm ci
-npm run dev
-```
-
-The services use ports 5000 and 5001. Vite uses its default development port 5173 unless that port is already occupied.
+Open [http://localhost:5000](http://localhost:5000). Do not start `INTELLIGENCE-BACKEND/server.js` or `npm run dev` for this production workflow. The retained intelligence server is not the production entry point.
 
 ## Prototype Data Disclaimer
 

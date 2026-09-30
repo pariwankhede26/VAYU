@@ -1,8 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
-const API_URL = "http://localhost:5001";
-
 function getPosition(latitude, longitude) {
   const x = 8 + ((longitude - 68) / 30) * 84;
   const y = 8 + ((36 - latitude) / 28) * 84;
@@ -51,7 +49,7 @@ export default function MapView() {
     async function loadEnvironmentalData() {
       const loadHotspots = async () => {
         try {
-          const response = await fetch(`${API_URL}/api/hotspots`);
+          const response = await fetch("/api/hotspots");
           const data = await response.json();
           if (!response.ok || !data.success) throw new Error();
           const loadedHotspots = data.hotspots || [];
@@ -67,7 +65,7 @@ export default function MapView() {
 
       const loadWeather = async () => {
         try {
-          const response = await fetch(`${API_URL}/api/weather`);
+          const response = await fetch("/api/weather");
           const data = await response.json();
           if (!response.ok || !data.success) throw new Error();
           setWeather(data.weather || null);
@@ -95,7 +93,7 @@ export default function MapView() {
     setPredictionError("");
     setPredictionLoading(true);
 
-    fetch(`${API_URL}/api/predict`, {
+    fetch("/api/predict", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
