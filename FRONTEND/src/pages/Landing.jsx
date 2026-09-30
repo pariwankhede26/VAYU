@@ -1,28 +1,49 @@
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
+const INTELLIGENCE_API_URL = "http://localhost:5001";
+
 export default function Landing() {
-  const stats = [
-    { value: "127", label: "Active Hotspots" },
-    { value: "4,892", label: "Citizen Reports" },
-    { value: "18", label: "Cities Ready" },
-    { value: "32 min", label: "Avg Response" },
-  ];
+  const [highestRisk, setHighestRisk] = useState(null);
+  const [countries, setCountries] = useState({});
+  const [selectedCountry, setSelectedCountry] = useState("India");
+
+  useEffect(() => {
+    fetch(`${INTELLIGENCE_API_URL}/api/hotspots`)
+      .then(async (response) => {
+        const data = await response.json();
+        if (!response.ok || !data.success) throw new Error("Hotspots unavailable");
+        const highest = [...(data.hotspots || [])].sort(
+          (first, second) => second.riskScore - first.riskScore
+        )[0];
+        setHighestRisk(highest || null);
+      })
+      .catch((error) => console.error("Landing hotspot load failed:", error));
+
+    fetch(`${INTELLIGENCE_API_URL}/api/country-config`)
+      .then(async (response) => {
+        const data = await response.json();
+        if (!response.ok || !data.success) throw new Error("Country context unavailable");
+        setCountries(data.countries || {});
+      })
+      .catch((error) => console.error("Country context load failed:", error));
+  }, []);
 
   const features = [
     {
       icon: "◉",
       title: "Citizen AI Vision",
-      text: "Analyze citizen-submitted images and observations to identify visible smoke, burning and emission events.",
+      text: "Google Gemini Vision analyzes citizen-submitted images and descriptions for visible pollution evidence.",
     },
     {
       icon: "⌁",
       title: "Hyper-local Mapping",
-      text: "Combine citizen observations with environmental signals to reveal pollution hotspots beyond fixed monitoring stations.",
+      text: "Explore backend hotspot records in a clearly labeled prototype spatial visualization.",
     },
     {
       icon: "↗",
       title: "Predictive Spread",
-      text: "Use weather and environmental conditions to estimate where pollution may move next.",
+      text: "Use the available wind context in a simplified prototype spread estimate.",
     },
   ];
 
@@ -109,9 +130,7 @@ export default function Landing() {
             </h1>
 
             <p className="mt-7 max-w-2xl text-lg leading-8 text-slate-400">
-              VAYU combines citizen observations, environmental signals,
-              satellite intelligence and AI-powered analysis to reveal
-              pollution events beyond traditional monitoring stations.
+              VAYU transforms citizen pollution evidence into localized environmental intelligence. Google Gemini Vision, a severity-based VAYU Risk Score, prototype hotspot data and simplified wind context form one connected reporting flow.
             </p>
 
             <div className="mt-9 flex flex-wrap gap-4">
@@ -146,7 +165,7 @@ export default function Landing() {
               <div className="mb-5 flex items-center justify-between">
                 <div>
                   <p className="text-xs tracking-widest text-slate-500">
-                    LIVE AIR INTELLIGENCE
+                    PROTOTYPE RISK VISUALIZATION
                   </p>
                   <p className="mt-1 font-semibold">
                     Prototype Visualization
@@ -155,7 +174,7 @@ export default function Landing() {
 
                 <div className="flex items-center gap-2 text-xs text-emerald-400">
                   <span className="h-2 w-2 rounded-full bg-emerald-400" />
-                  MONITORING
+                    SIMULATED DATA
                 </div>
               </div>
 
@@ -190,32 +209,28 @@ export default function Landing() {
                   <div className="h-6 w-6 rounded-full bg-yellow-300 shadow-[0_0_35px_rgba(253,224,71,0.8)]" />
                 </div>
 
-                {/* AQI CARD */}
+                {/* VAYU RISK CARD */}
                 <div className="absolute left-5 top-5 rounded-xl border border-white/10 bg-slate-950/80 p-4 backdrop-blur">
-                  <p className="text-xs text-slate-500">AQI</p>
+                  <p className="text-xs text-slate-500">VAYU RISK SCORE</p>
                   <p className="text-4xl font-black text-orange-400">
-                    187
+                    {highestRisk?.riskScore ?? "--"}
                   </p>
                   <p className="text-xs text-slate-400">
-                    Unhealthy
+                    {highestRisk ? `${highestRisk.city} · prototype record` : "Prototype event"}
                   </p>
                 </div>
-
-                {/* PM CARD */}
                 <div className="absolute bottom-5 right-5 rounded-xl border border-white/10 bg-slate-950/80 p-4 backdrop-blur">
-                  <p className="text-xs text-slate-500">
-                    PM2.5
-                  </p>
-                  <p className="text-2xl font-bold">
-                    142 µg/m³
+                  <p className="text-xs text-slate-500">DATA STATUS</p>
+                  <p className="text-lg font-bold">
+                    Simulated
                   </p>
                   <p className="mt-1 text-xs text-red-400">
-                    HOTSPOT DETECTED
+                    NOT OFFICIAL AQI
                   </p>
                 </div>
 
                 <div className="absolute bottom-5 left-5 rounded-lg bg-red-400/10 px-3 py-2 text-xs text-red-300">
-                  INDUSTRIAL ZONE
+                  SCHEMATIC DATA VIEW
                 </div>
 
               </div>
@@ -223,27 +238,10 @@ export default function Landing() {
           </div>
         </section>
 
-        {/* STATS */}
+        {/* DATA DISCLAIMER */}
         <section className="border-y border-white/10 bg-white/[0.02]">
-          <div className="mx-auto grid max-w-7xl grid-cols-2 lg:grid-cols-4">
-            {stats.map((stat) => (
-              <div
-                key={stat.label}
-                className="border-r border-white/10 px-6 py-10 last:border-r-0"
-              >
-                <p className="text-3xl font-black sm:text-4xl">
-                  {stat.value}
-                </p>
-
-                <p className="mt-2 text-sm text-slate-500">
-                  {stat.label}
-                </p>
-
-                <p className="mt-3 text-[10px] uppercase tracking-wider text-emerald-400/60">
-                  Prototype data
-                </p>
-              </div>
-            ))}
+          <div className="mx-auto max-w-7xl px-6 py-6 text-sm leading-6 text-slate-400">
+            Prototype / simulated environmental data. VAYU does not currently connect to official AQI, government sensor readings, live weather providers, or a citizen-report database.
           </div>
         </section>
 
@@ -296,9 +294,9 @@ export default function Landing() {
 
             <div className="mt-14 grid gap-6 md:grid-cols-3">
               {[
-                ["01", "REPORT", "Citizens submit a photo, location and observation."],
-                ["02", "ANALYZE", "AI analyzes the report and combines environmental signals."],
-                ["03", "ACT", "Authorities receive prioritized hotspot intelligence."],
+                ["01", "REPORT", "Citizens submit a photo, optional location and observation."],
+                ["02", "ANALYZE", "Gemini Vision, the risk engine and prototype context create a decision-support view."],
+                ["03", "REVIEW", "People review the suggested next step; VAYU does not dispatch alerts."],
               ].map(([number, title, text]) => (
                 <div
                   key={number}
@@ -321,39 +319,62 @@ export default function Landing() {
           </div>
         </section>
 
-        {/* INDIA SCALE */}
+        {/* AI TRANSPARENCY */}
         <section className="mx-auto max-w-7xl px-6 py-24">
-          <div className="rounded-3xl border border-emerald-400/20 bg-gradient-to-br from-emerald-400/10 to-transparent p-8 md:p-14">
+          <p className="text-sm font-semibold text-emerald-400">HOW VAYU AI WORKS</p>
+          <h2 className="mt-3 text-4xl font-black">From citizen evidence to a reasoned next step.</h2>
+          <div className="mt-10 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {[
+              "Citizen evidence",
+              "Google Gemini Vision",
+              "Visual evidence analysis",
+              "Pollution source classification",
+              "Severity estimation",
+              "Weather + wind context",
+              "VAYU Risk Engine",
+              "Pollution spread prediction",
+            ].map((step, index) => (
+              <div key={step} className="border-l-2 border-emerald-400/50 bg-white/[0.03] p-4">
+                <p className="text-xs font-bold text-emerald-400">{String(index + 1).padStart(2, "0")}</p>
+                <p className="mt-2 font-semibold">{step}</p>
+              </div>
+            ))}
+          </div>
+          <p className="mt-6 max-w-4xl text-sm leading-6 text-slate-400">
+            VAYU's AI analysis is an environmental decision-support tool and does not represent an official government AQI measurement. Gemini can identify visual evidence but cannot verify an incident or measure air quality from an image.
+          </p>
+        </section>
 
-            <p className="text-sm font-semibold text-emerald-400">
-              BUILT FOR INDIA
+        {/* BRICS CONFIGURATION */}
+        <section className="border-y border-white/10 bg-white/[0.02]">
+          <div className="mx-auto max-w-7xl px-6 py-20">
+            <p className="text-sm font-semibold text-emerald-400">MODULAR COUNTRY CONTEXT</p>
+            <h2 className="mt-3 text-4xl font-black">Designed for BRICS-Scale Environmental Intelligence</h2>
+            <p className="mt-5 max-w-4xl leading-7 text-slate-400">
+              Built for Indian urban and environmental conditions, with a modular architecture that can adapt to pollution sources, geographic contexts and environmental datasets across BRICS nations.
             </p>
-
-            <h2 className="mt-4 max-w-3xl text-4xl font-black">
-              Designed as a Digital Public Good for India.
-            </h2>
-
-            <p className="mt-5 max-w-2xl leading-8 text-slate-400">
-              VAYU is designed around interoperable data, shared predictive
-              models and a city-to-state architecture so environmental
-              intelligence can move across communities.
-            </p>
-
-            <div className="mt-8 flex flex-wrap gap-3">
-              {[
-                "Multi-city",
-                "Multilingual",
-                "Federated AI",
-                "Open Data Ready",
-              ].map((item) => (
-                <span
-                  key={item}
-                  className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-slate-300"
+            <div className="mt-8 grid gap-8 lg:grid-cols-[280px_1fr]">
+              <label className="text-sm text-slate-400">
+                Country context
+                <select
+                  value={selectedCountry}
+                  onChange={(event) => setSelectedCountry(event.target.value)}
+                  className="mt-2 w-full rounded-lg border border-white/10 bg-slate-950 px-4 py-3 text-white"
                 >
-                  {item}
-                </span>
-              ))}
+                  {Object.keys(countries).map((country) => <option key={country}>{country}</option>)}
+                </select>
+              </label>
+              <div>
+                <p className="text-xs uppercase tracking-widest text-slate-500">Configured source categories · not a deployment claim</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {(countries[selectedCountry]?.pollutionSources || []).map((source) => (
+                    <span key={source} className="rounded-md border border-white/10 px-3 py-2 text-sm text-slate-300">{source.replaceAll("_", " ")}</span>
+                  ))}
+                  {Object.keys(countries).length === 0 && <span className="text-sm text-slate-500">Country configuration unavailable.</span>}
+                </div>
+              </div>
             </div>
+            <p className="mt-8 text-xs text-slate-500">Country contexts are configuration examples. VAYU is not represented as deployed across BRICS nations.</p>
           </div>
         </section>
 
@@ -386,7 +407,7 @@ export default function Landing() {
           <div>
             <p className="font-bold">VAYU</p>
             <p className="mt-1 text-sm text-slate-500">
-              Hyper-local climate intelligence for India.
+              Citizen pollution evidence to localized environmental intelligence.
             </p>
           </div>
 
@@ -409,7 +430,7 @@ export default function Landing() {
           </div>
 
           <p className="text-xs text-slate-600">
-            Prototype • Code for Communities 2026
+            Prototype environmental intelligence platform
           </p>
         </div>
       </footer>

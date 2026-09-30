@@ -189,11 +189,11 @@ app.post(
       // CHECK IMAGE
       // ------------------------------------------------
 
-      if (!req.file) {
+      if (!req.file || !req.file.mimetype?.startsWith("image/")) {
 
         return res.status(400).json({
           success: false,
-          error: "Image is required."
+          error: "Please upload a valid pollution image."
         });
 
       }
@@ -204,9 +204,33 @@ app.post(
 
       const description = req.body.description || "";
 
-      const latitude = req.body.latitude || "";
+      const latitude = req.body.latitude ?? "";
 
-      const longitude = req.body.longitude || "";
+      const longitude = req.body.longitude ?? "";
+
+      const locationName = req.body.locationName || "";
+
+      const hasLatitude = latitude !== "";
+      const hasLongitude = longitude !== "";
+
+      if (
+        hasLatitude !== hasLongitude ||
+        (hasLatitude &&
+          (!Number.isFinite(Number(latitude)) ||
+            Number(latitude) < -90 ||
+            Number(latitude) > 90 ||
+            !Number.isFinite(Number(longitude)) ||
+            Number(longitude) < -180 ||
+            Number(longitude) > 180))
+      ) {
+        return res.status(400).json({
+          success: false,
+          error: "Enter a valid latitude and longitude, or omit both."
+        });
+      }
+
+      const latitudeValue = hasLatitude ? Number(latitude) : null;
+      const longitudeValue = hasLongitude ? Number(longitude) : null;
 
       // ------------------------------------------------
       // PROMPT
@@ -260,7 +284,9 @@ ${description}
 
 Location:
 Latitude: ${latitude}
-Longitude: ${longitude}
+${locationName || "Location name not provided"}
+Latitude: ${latitudeValue ?? "not provided"}
+Longitude: ${longitudeValue ?? "not provided"}
 
 Return ONLY valid JSON.
 
@@ -417,11 +443,9 @@ Example:
               recommendedAction:
                 result.recommendedAction,
 
-              latitude:
-                Number(latitude),
+              latitude: latitudeValue,
 
-              longitude:
-                Number(longitude)
+              longitude: longitudeValue
 
             }
 
@@ -484,11 +508,9 @@ Example:
           recommendedAction:
             fallback.recommendedAction,
 
-          latitude:
-            Number(latitude),
+          latitude: latitudeValue,
 
-          longitude:
-            Number(longitude)
+          longitude: longitudeValue
 
         }
 

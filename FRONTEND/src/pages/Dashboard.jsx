@@ -1,26 +1,50 @@
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
+const INTELLIGENCE_API_URL = "http://localhost:5001";
+
 export default function Dashboard() {
-  const alerts = [
-    {
-      title: "Industrial emission detected",
-      location: "Jaipur Industrial Area",
-      severity: "HIGH",
-      time: "8 min ago",
-    },
-    {
-      title: "Smoke event reported",
-      location: "Mansarovar",
-      severity: "MEDIUM",
-      time: "21 min ago",
-    },
-    {
-      title: "Traffic pollution rising",
-      location: "Tonk Road",
-      severity: "MEDIUM",
-      time: "34 min ago",
-    },
-  ];
+  const [hotspots, setHotspots] = useState([]);
+  const [weather, setWeather] = useState(null);
+  const [weatherError, setWeatherError] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [serviceError, setServiceError] = useState("");
+
+  useEffect(() => {
+    async function loadDashboardData() {
+      try {
+        const [hotspotResponse, weatherResponse] = await Promise.all([
+          fetch(`${INTELLIGENCE_API_URL}/api/hotspots`),
+          fetch(`${INTELLIGENCE_API_URL}/api/weather`),
+        ]);
+        const [hotspotData, weatherData] = await Promise.all([
+          hotspotResponse.json(),
+          weatherResponse.json(),
+        ]);
+        if (!hotspotResponse.ok || !hotspotData.success) {
+          throw new Error("Environmental intelligence service unavailable.");
+        }
+        setHotspots(hotspotData.hotspots || []);
+        if (weatherResponse.ok && weatherData.success) {
+          setWeather(weatherData.weather || null);
+        } else {
+          setWeatherError("Weather context unavailable.");
+        }
+      } catch (error) {
+        console.error("Dashboard data error:", error);
+        setServiceError("Environmental intelligence service unavailable.");
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadDashboardData();
+  }, []);
+
+  const highestRisk = [...hotspots].sort(
+    (first, second) => second.riskScore - first.riskScore
+  )[0];
+  const prototypeCities = [...new Set(hotspots.map((hotspot) => hotspot.city))];
 
   return (
     <div className="min-h-screen bg-slate-950 text-white">
@@ -103,8 +127,7 @@ export default function Dashboard() {
             </h1>
 
             <p className="mt-4 max-w-2xl text-slate-400">
-              Monitor pollution signals, review AI-generated alerts and
-              prioritize environmental response.
+              Review simulated hotspot records, inspect VAYU Risk Scores, and follow a citizen image through the Gemini analysis workflow.
             </p>
 
           </div>
@@ -118,10 +141,8 @@ export default function Dashboard() {
 
             <div className="mt-1 flex items-center gap-2">
 
-              <span className="h-2 w-2 rounded-full bg-emerald-400" />
-
               <p className="font-semibold text-emerald-400">
-                All systems operational
+                Prototype dashboard
               </p>
 
             </div>
@@ -136,26 +157,26 @@ export default function Dashboard() {
 
           <Metric
             label="Active Hotspots"
-            value="127"
-            detail="+12 today"
+            value={loading ? "..." : hotspots.length}
+            detail="Prototype / simulated records"
           />
 
           <Metric
             label="Citizen Reports"
-            value="4,892"
-            detail="+184 this week"
+            value="Not collected"
+            detail="No citizen-report database"
           />
 
           <Metric
-            label="AI Alerts"
-            value="38"
-            detail="7 require action"
+            label="AI analysis"
+            value="Report workflow"
+            detail="Gemini Vision integration"
           />
 
           <Metric
-            label="Cities Monitored"
-            value="18"
-            detail="India network"
+            label="Prototype cities"
+            value={loading ? "..." : prototypeCities.length}
+            detail="Simulated dataset coverage"
           />
 
         </div>
@@ -181,13 +202,13 @@ export default function Dashboard() {
                   </p>
 
                   <h2 className="mt-2 text-2xl font-bold">
-                    Pollution activity is elevated
+                    Prototype environmental signals
                   </h2>
 
                 </div>
 
                 <div className="rounded-full bg-orange-400/10 px-4 py-2 text-xs font-bold text-orange-400">
-                  ELEVATED RISK
+                  SIMULATED DATA
                 </div>
 
               </div>
@@ -196,51 +217,50 @@ export default function Dashboard() {
               {/* CHART */}
               <div className="mt-8">
 
-                <div className="flex h-64 items-end gap-2 rounded-2xl border border-white/5 bg-slate-900 p-5">
-
-                  {[35, 48, 42, 65, 52, 74, 62, 86, 71, 92, 78, 88, 96, 82, 91, 100].map(
-                    (height, index) => (
-                      <div
-                        key={index}
-                        className="flex-1 rounded-t-md bg-emerald-400/60 transition hover:bg-emerald-400"
-                        style={{
-                          height: `${height}%`,
-                        }}
-                      />
-                    )
-                  )}
-
+                <div className="rounded-2xl border border-white/5 bg-slate-900 p-6">
+                  <div className="flex items-end justify-between gap-4">
+                    <div>
+                      <p className="text-sm text-slate-500">Highest prototype VAYU Risk Score</p>
+                      <p className="mt-2 text-5xl font-black text-orange-300">
+                        {highestRisk?.riskScore ?? "--"}<span className="text-base text-slate-500"> / 100</span>
+                      </p>
+                      <p className="mt-2 text-sm text-slate-400">
+                        {highestRisk ? `${highestRisk.city} · ${highestRisk.type.replaceAll("_", " ")}` : serviceError || "Loading prototype records..."}
+                      </p>
+                    </div>
+                    <div className="text-right text-xs text-slate-500">
+                      <p>Wind</p>
+                      <p className="mt-1 text-base text-white">
+                        {weather ? `${weather.windSpeed} km/h ${weather.windDirection}` : weatherError || "Unavailable"}
+                      </p>
+                      <p className="mt-2">Prototype context</p>
+                    </div>
+                  </div>
+                  <div className="mt-5 h-2 rounded-full bg-white/10">
+                    <div className="h-full rounded-full bg-orange-400" style={{ width: `${highestRisk?.riskScore || 0}%` }} />
+                  </div>
                 </div>
-
-                <div className="mt-3 flex justify-between text-[10px] text-slate-600">
-                  <span>06:00</span>
-                  <span>09:00</span>
-                  <span>12:00</span>
-                  <span>15:00</span>
-                  <span>18:00</span>
-                </div>
-
               </div>
 
 
               <div className="mt-6 grid gap-4 sm:grid-cols-3">
 
                 <MiniStat
-                  label="PM2.5"
-                  value="142"
-                  unit="µg/m³"
+                  label="Risk level"
+                  value={highestRisk?.riskLevel || "--"}
+                  unit="VAYU score"
                 />
 
                 <MiniStat
-                  label="AQI"
-                  value="187"
-                  unit="index"
+                  label="Source category"
+                  value={highestRisk?.type?.replaceAll("_", " ") || "--"}
+                  unit="prototype"
                 />
 
                 <MiniStat
-                  label="Wind"
-                  value="14"
-                  unit="km/h E"
+                  label="Temperature"
+                  value={weather?.temperature ?? "--"}
+                  unit={weather ? "°C · prototype" : "unavailable"}
                 />
 
               </div>
@@ -264,7 +284,7 @@ export default function Dashboard() {
                 </div>
 
                 <span className="text-xs text-emerald-400">
-                  LIVE
+                  PROTOTYPE FLOW
                 </span>
 
               </div>
@@ -275,25 +295,25 @@ export default function Dashboard() {
                 <Pipeline
                   number="01"
                   title="Citizen Signal"
-                  status="184 new"
+                  status="User-submitted image + description"
                 />
 
                 <Pipeline
                   number="02"
-                  title="AI Analysis"
-                  status="38 analyzed"
+                  title="Gemini Vision"
+                  status="Image analysis available"
                 />
 
                 <Pipeline
                   number="03"
                   title="Risk Priority"
-                  status="7 critical"
+                  status="Severity + confidence score"
                 />
 
                 <Pipeline
                   number="04"
-                  title="Authority Alert"
-                  status="12 sent"
+                  title="Authority response"
+                  status="Not connected"
                 />
 
               </div>
@@ -301,38 +321,26 @@ export default function Dashboard() {
             </div>
 
 
-            {/* INDIA SCALE */}
+            {/* PROTOTYPE COVERAGE */}
             <div className="rounded-3xl border border-emerald-400/20 bg-emerald-400/5 p-6">
 
               <p className="text-xs font-semibold tracking-widest text-emerald-400">
-                INDIA NETWORK
+                PROTOTYPE DATA COVERAGE
               </p>
 
               <h2 className="mt-2 text-2xl font-bold">
-                Designed to work across cities and states
+                Synthetic records across Indian city contexts
               </h2>
 
               <div className="mt-6 grid grid-cols-2 gap-4 md:grid-cols-4">
 
-                <City
-                  name="Jaipur"
-                  status="Active"
-                />
+                {prototypeCities.map((city) => (
+                  <City key={city} name={city} status="Prototype record" />
+                ))}
 
-                <City
-                  name="Delhi"
-                  status="Active"
-                />
-
-                <City
-                  name="Mumbai"
-                  status="Ready"
-                />
-
-                <City
-                  name="Bengaluru"
-                  status="Ready"
-                />
+                {!prototypeCities.length && (
+                  <p className="text-sm text-slate-500">{serviceError || "No prototype records available."}</p>
+                )}
 
               </div>
 
@@ -345,23 +353,23 @@ export default function Dashboard() {
           <aside className="space-y-6">
 
 
-            {/* PRIORITY ALERTS */}
+            {/* HOTSPOT RECORDS */}
             <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-6">
 
               <div className="flex items-center justify-between">
 
                 <div>
                   <p className="text-xs tracking-widest text-slate-500">
-                    PRIORITY ALERTS
+                    PROTOTYPE HOTSPOTS
                   </p>
 
                   <h2 className="mt-2 text-xl font-bold">
-                    Needs attention
+                    Highest risk records
                   </h2>
                 </div>
 
-                <span className="rounded-full bg-red-400/10 px-3 py-1 text-xs text-red-400">
-                  7
+                <span className="rounded-full bg-emerald-400/10 px-3 py-1 text-xs text-emerald-300">
+                  {hotspots.length}
                 </span>
 
               </div>
@@ -369,53 +377,42 @@ export default function Dashboard() {
 
               <div className="mt-6 space-y-4">
 
-                {alerts.map((alert) => (
-
+                {[...hotspots]
+                  .sort((first, second) => second.riskScore - first.riskScore)
+                  .slice(0, 5)
+                  .map((hotspot) => (
                   <div
-                    key={alert.title}
+                    key={hotspot.id}
                     className="rounded-2xl border border-white/10 bg-slate-900 p-4"
                   >
-
                     <div className="flex items-start justify-between gap-3">
-
                       <div>
-
                         <div className="flex items-center gap-2">
-
-                          <span className="h-2 w-2 rounded-full bg-red-400" />
-
+                          <span className="h-2 w-2 rounded-full bg-orange-300" />
                           <p className="text-sm font-semibold">
-                            {alert.title}
+                            {hotspot.city} · {hotspot.type.replaceAll("_", " ")}
                           </p>
-
                         </div>
-
                         <p className="mt-2 text-xs text-slate-500">
-                          {alert.location}
+                          {hotspot.severity && Number.isFinite(hotspot.confidence)
+                            ? `${hotspot.severity} · ${hotspot.confidence}% prototype confidence`
+                            : "Prototype classification"}
                         </p>
-
-                        <p className="mt-1 text-[10px] text-slate-600">
-                          {alert.time}
-                        </p>
-
                       </div>
-
-                      <span className="text-[10px] font-bold text-red-400">
-                        {alert.severity}
+                      <span className="text-right text-sm font-bold text-orange-300">
+                        {hotspot.riskScore}/100
                       </span>
-
                     </div>
-
                   </div>
-
                 ))}
-
               </div>
 
+              {loading && <p className="mt-4 text-sm text-slate-500">Loading prototype records...</p>}
+              {!loading && !hotspots.length && <p className="mt-4 text-sm text-slate-500">{serviceError || "No prototype records available."}</p>}
 
-              <button className="mt-5 w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold hover:bg-white/10">
-                View all alerts
-              </button>
+              <Link to="/map" className="mt-5 block w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-center text-sm font-semibold hover:bg-white/10">
+                Open hotspot map
+              </Link>
 
             </div>
 
@@ -428,18 +425,16 @@ export default function Dashboard() {
               </p>
 
               <h2 className="mt-3 text-xl font-bold">
-                Inspect Jaipur Industrial Area
+                {highestRisk ? `Review ${highestRisk.city} prototype record` : "Review environmental signals"}
               </h2>
 
               <p className="mt-3 text-sm leading-6 text-slate-400">
-                AI has identified a high-confidence emission signal.
-                Nearby authorities can prioritize this location for
-                verification.
+                Confirm the reported source in the field before taking action. The dashboard uses simulated records and does not send alerts to authorities.
               </p>
 
-              <button className="mt-5 w-full rounded-xl bg-emerald-400 px-4 py-3 font-bold text-slate-950 hover:bg-emerald-300">
-                Create Response Task
-              </button>
+              <Link to="/report" className="mt-5 block w-full rounded-xl bg-emerald-400 px-4 py-3 text-center font-bold text-slate-950 hover:bg-emerald-300">
+                Submit an observation
+              </Link>
 
             </div>
 
@@ -454,28 +449,28 @@ export default function Dashboard() {
               <div className="mt-5 space-y-3">
 
                 <Source
-                  name="Citizen Reports"
-                  status="Connected"
+                  name="Citizen image analysis"
+                  status="Gemini Vision"
                 />
 
                 <Source
-                  name="Environmental Sensors"
+                  name="Hotspot records"
+                  status="Simulated"
+                />
+
+                <Source
+                  name="Weather context"
                   status="Prototype"
                 />
 
                 <Source
-                  name="Satellite Signals"
-                  status="Prototype"
+                  name="Official AQI"
+                  status="Not connected"
                 />
 
                 <Source
-                  name="Weather Data"
-                  status="Prototype"
-                />
-
-                <Source
-                  name="Google AI"
-                  status="Connected"
+                  name="VAYU Risk Engine"
+                  status="Severity-based"
                 />
 
               </div>

@@ -1,60 +1,32 @@
 function calculateRisk(event) {
-  let score = 0;
-
-  // ------------------------------------
-  // PM2.5 CONTRIBUTION
-  // ------------------------------------
-  if (event.pm25 >= 200) {
-    score += 50;
-  } else if (event.pm25 >= 150) {
-    score += 40;
-  } else if (event.pm25 >= 100) {
-    score += 30;
-  } else if (event.pm25 >= 50) {
-    score += 20;
-  } else {
-    score += 10;
-  }
-
-  // ------------------------------------
-  // CITIZEN REPORT CONTRIBUTION
-  // ------------------------------------
-  score += Math.min(event.reports * 2, 30);
-
-  // ------------------------------------
-  // POLLUTION TYPE CONTRIBUTION
-  // ------------------------------------
-  if (
-    event.type === "industrial_emission" ||
-    event.type === "garbage_burning"
-  ) {
-    score += 20;
-  } else if (
-    event.type === "vehicle_emission" ||
-    event.type === "construction_dust"
-  ) {
-    score += 10;
-  }
-
-  // ------------------------------------
-  // KEEP SCORE BETWEEN 0 AND 100
-  // ------------------------------------
-  score = Math.min(score, 100);
-
-  // ------------------------------------
-  // DETERMINE RISK LEVEL
-  // ------------------------------------
-  let riskLevel;
-
-  if (score >= 80) {
-    riskLevel = "critical";
-  } else if (score >= 60) {
-    riskLevel = "high";
-  } else if (score >= 40) {
-    riskLevel = "moderate";
-  } else {
-    riskLevel = "low";
-  }
+  const severityBands = {
+    low: [0, 30],
+    moderate: [31, 60],
+    high: [61, 80],
+    critical: [81, 100]
+  };
+  const severity = severityBands[event.severity]
+    ? event.severity
+    : "moderate";
+  const [minimum, maximum] = severityBands[severity];
+  const confidence = Math.max(
+    0,
+    Math.min(Number(event.confidence) || 0, 100)
+  );
+  const typeAdjustment = {
+    industrial_emission: 5,
+    crop_burning: 5,
+    garbage_burning: 5,
+    fire_smoke: 5,
+    construction_dust: 3,
+    dust_storm: 3,
+    vehicle_emission: 2
+  }[event.type] || 0;
+  const score = Math.min(
+    maximum,
+    minimum + Math.round((maximum - minimum) * confidence / 100) + typeAdjustment
+  );
+  const riskLevel = severity;
 
   return {
     riskScore: score,

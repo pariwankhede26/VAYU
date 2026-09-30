@@ -3,6 +3,7 @@ const cors = require("cors");
 
 const { calculateRisk } = require("./helpers/riskEngine");
 const pollutionEvents = require("./data/pollution_events.json");
+const countryConfig = require("./config/countryConfig");
 
 const app = express();
 const PORT = 5001;
@@ -35,12 +36,11 @@ app.get("/api/hotspots", (req, res) => {
       latitude: event.latitude,
       longitude: event.longitude,
       type: event.type,
+      severity: event.severity,
+      confidence: event.confidence,
 
       riskScore: risk.riskScore,
-      riskLevel: risk.riskLevel,
-
-      reports: event.reports,
-      pm25: event.pm25
+      riskLevel: risk.riskLevel
     };
   });
 
@@ -67,6 +67,7 @@ app.get("/api/weather", (req, res) => {
   res.json({
     success: true,
     source: "prototype_data",
+    notice: "Prototype weather data",
     weather: weather
   });
 });
@@ -85,11 +86,21 @@ app.post("/api/predict", (req, res) => {
 
   // Check required values
   if (
-    latitude === undefined ||
-    longitude === undefined ||
-    riskScore === undefined ||
-    windSpeed === undefined ||
-    !windDirection
+    !Number.isFinite(latitude) ||
+    latitude < -90 ||
+    latitude > 90 ||
+    !Number.isFinite(longitude) ||
+    longitude < -180 ||
+    longitude > 180 ||
+    !Number.isFinite(riskScore) ||
+    riskScore < 0 ||
+    riskScore > 100 ||
+    !Number.isFinite(windSpeed) ||
+    windSpeed < 0 ||
+    typeof windDirection !== "string" ||
+    !["N", "S", "E", "W", "NE", "NW", "SE", "SW"].includes(
+      windDirection.toUpperCase()
+    )
   ) {
     return res.status(400).json({
       success: false,
@@ -233,6 +244,48 @@ app.post("/api/predict", (req, res) => {
 });
 
 // ------------------------------------
+app.post("/api/risk", (req, res) => {
+  const { type, severity, confidence } = req.body;
+  const validSeverities = ["low", "moderate", "high", "critical"];
+  const validTypes = [
+    "industrial_emission",
+    "crop_burning",
+    "garbage_burning",
+    "construction_dust",
+    "vehicle_emission",
+    "fire_smoke",
+    "dust_storm",
+    "other",
+    "unclear"
+  ];
+
+  if (
+    !validTypes.includes(type) ||
+    !validSeverities.includes(severity) ||
+    !Number.isFinite(confidence) ||
+    confidence < 0 ||
+    confidence > 100
+  ) {
+    return res.status(400).json({
+      success: false,
+      message: "type, severity and confidence (0-100) are required"
+    });
+  }
+
+  res.json({
+    success: true,
+    source: "vayu_risk_engine",
+    risk: calculateRisk({ type, severity, confidence })
+  });
+});
+
+app.get("/api/country-config", (req, res) => {
+  res.json({
+    success: true,
+    countries: countryConfig
+  });
+});
+
 // START SERVER
 // ------------------------------------
 app.listen(PORT, () => {

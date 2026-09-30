@@ -3,17 +3,16 @@ import { Link } from "react-router-dom";
 
 const API_URL = "http://localhost:5001";
 
-function getPosition(city) {
-  const positions = {
-    Jaipur: { x: "28%", y: "32%" },
-    Delhi: { x: "42%", y: "15%" },
-    Mumbai: { x: "18%", y: "70%" },
-    Ahmedabad: { x: "25%", y: "52%" },
-    Bhopal: { x: "48%", y: "55%" },
-    Kanpur: { x: "60%", y: "30%" },
-  };
+function getPosition(latitude, longitude) {
+  const x = 8 + ((longitude - 68) / 30) * 84;
+  const y = 8 + ((36 - latitude) / 28) * 84;
 
-  return positions[city] || { x: "50%", y: "50%" };
+  return {
+    x: `${Math.max(5, Math.min(x, 95))}%`,
+    y: `${Math.max(5, Math.min(y, 95))}%`,
+    numericX: Math.max(5, Math.min(x, 95)),
+    numericY: Math.max(5, Math.min(y, 95)),
+  };
 }
 
 function getRiskColor(riskLevel) {
@@ -41,78 +40,89 @@ export default function MapView() {
   const [hotspots, setHotspots] = useState([]);
   const [weather, setWeather] = useState(null);
   const [prediction, setPrediction] = useState(null);
-
+  const [selectedHotspotId, setSelectedHotspotId] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [predictionLoading, setPredictionLoading] = useState(false);
+  const [hotspotError, setHotspotError] = useState("");
+  const [weatherError, setWeatherError] = useState("");
+  const [predictionError, setPredictionError] = useState("");
 
   useEffect(() => {
     async function loadEnvironmentalData() {
-      try {
-        setLoading(true);
-        setError("");
-
-        const [hotspotsResponse, weatherResponse] = await Promise.all([
-          fetch(`${API_URL}/api/hotspots`),
-          fetch(`${API_URL}/api/weather`),
-        ]);
-
-        if (!hotspotsResponse.ok) {
-          throw new Error("Unable to load hotspot data");
+      const loadHotspots = async () => {
+        try {
+          const response = await fetch(`${API_URL}/api/hotspots`);
+          const data = await response.json();
+          if (!response.ok || !data.success) throw new Error();
+          const loadedHotspots = data.hotspots || [];
+          setHotspots(loadedHotspots);
+          setSelectedHotspotId(loadedHotspots[0]?.id ?? null);
+        } catch (error) {
+          console.error("Hotspot service error:", error);
+          setHotspotError("Environmental intelligence service unavailable.");
+        } finally {
+          setLoading(false);
         }
+      };
 
-        if (!weatherResponse.ok) {
-          throw new Error("Unable to load weather data");
+      const loadWeather = async () => {
+        try {
+          const response = await fetch(`${API_URL}/api/weather`);
+          const data = await response.json();
+          if (!response.ok || !data.success) throw new Error();
+          setWeather(data.weather || null);
+        } catch (error) {
+          console.error("Weather service error:", error);
+          setWeatherError("Weather context unavailable.");
         }
+      };
 
-        const hotspotsData = await hotspotsResponse.json();
-        const weatherData = await weatherResponse.json();
-
-        setHotspots(hotspotsData.hotspots || []);
-        setWeather(weatherData.weather || null);
-
-        const currentHotspots = hotspotsData.hotspots || [];
-
-        if (currentHotspots.length > 0 && weatherData.weather) {
-          const highestRiskHotspot = [...currentHotspots].sort(
-            (a, b) => b.riskScore - a.riskScore
-          )[0];
-
-          const predictionResponse = await fetch(`${API_URL}/api/predict`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              latitude: highestRiskHotspot.latitude,
-              longitude: highestRiskHotspot.longitude,
-              riskScore: highestRiskHotspot.riskScore,
-              windSpeed: weatherData.weather.windSpeed,
-              windDirection: weatherData.weather.windDirection,
-            }),
-          });
-
-          if (!predictionResponse.ok) {
-            throw new Error("Unable to load prediction data");
-          }
-
-          const predictionData = await predictionResponse.json();
-
-          setPrediction(predictionData.prediction || null);
-        }
-      } catch (err) {
-        console.error("Environmental data error:", err);
-        setError(err.message || "Unable to load environmental intelligence");
-      } finally {
-        setLoading(false);
-      }
+      await Promise.all([loadHotspots(), loadWeather()]);
     }
 
     loadEnvironmentalData();
   }, []);
 
-  const highestRisk = hotspots.length
-    ? [...hotspots].sort((a, b) => b.riskScore - a.riskScore)[0]
-    : null;
+  const selectedHotspot = hotspots.find(
+    (hotspot) => hotspot.id === selectedHotspotId
+  ) || hotspots[0] || null;
+
+  useEffect(() => {
+    if (!selectedHotspot || !weather) return undefined;
+
+    let cancelled = false;
+    setPrediction(null);
+    setPredictionError("");
+    setPredictionLoading(true);
+
+    fetch(`${API_URL}/api/predict`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        latitude: selectedHotspot.latitude,
+        longitude: selectedHotspot.longitude,
+        riskScore: selectedHotspot.riskScore,
+        windSpeed: weather.windSpeed,
+        windDirection: weather.windDirection,
+      }),
+    })
+      .then(async (response) => {
+        const data = await response.json();
+        if (!response.ok || !data.success) throw new Error();
+        if (!cancelled) setPrediction(data.prediction || null);
+      })
+      .catch((error) => {
+        console.error("Prediction service error:", error);
+        if (!cancelled) setPredictionError("Spread prediction temporarily unavailable.");
+      })
+      .finally(() => {
+        if (!cancelled) setPredictionLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedHotspot, weather]);
 
   return (
     <div className="min-h-screen bg-slate-950 text-white">
@@ -176,7 +186,7 @@ export default function MapView() {
           <div>
             <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-400/5 px-4 py-2 text-xs text-emerald-300">
               <span className="h-2 w-2 rounded-full bg-emerald-400" />
-              LIVE ENVIRONMENTAL INTELLIGENCE
+              PROTOTYPE ENVIRONMENTAL INTELLIGENCE
             </div>
 
             <h1 className="text-4xl font-black sm:text-5xl">
@@ -196,15 +206,15 @@ export default function MapView() {
             </p>
 
             <p className="mt-1 font-semibold">
-              {highestRisk?.city || "India"}
+              {selectedHotspot?.city || "Prototype coverage"}
             </p>
           </div>
         </div>
 
         {/* ERROR */}
-        {error && (
+        {hotspotError && (
           <div className="mt-6 rounded-xl border border-red-400/20 bg-red-400/10 p-4 text-sm text-red-300">
-            {error}
+            {hotspotError}
           </div>
         )}
 
@@ -236,9 +246,34 @@ export default function MapView() {
               <p className="text-xs text-slate-500">MAP LAYER</p>
 
               <p className="mt-1 font-semibold">
-                Pollution Hotspots
+                Prototype coordinate plot
               </p>
             </div>
+
+            <svg className="pointer-events-none absolute inset-0 h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+              <defs>
+                <marker id="prediction-arrow" markerWidth="5" markerHeight="5" refX="4" refY="2.5" orient="auto">
+                  <path d="M0,0 L5,2.5 L0,5 Z" fill="#fb923c" />
+                </marker>
+              </defs>
+              {prediction?.predictedZones?.map((zone, index) => {
+                const sourcePosition = getPosition(selectedHotspot.latitude, selectedHotspot.longitude);
+                const targetPosition = getPosition(zone.latitude, zone.longitude);
+                return (
+                  <line
+                    key={`path-${index}`}
+                    x1={sourcePosition.numericX}
+                    y1={sourcePosition.numericY}
+                    x2={targetPosition.numericX}
+                    y2={targetPosition.numericY}
+                    stroke="#fb923c"
+                    strokeWidth="0.6"
+                    strokeDasharray="2 1"
+                    markerEnd="url(#prediction-arrow)"
+                  />
+                );
+              })}
+            </svg>
 
             {/* LOADING */}
             {loading && (
@@ -252,13 +287,16 @@ export default function MapView() {
             {/* HOTSPOTS */}
             {!loading &&
               hotspots.map((hotspot) => {
-                const position = getPosition(hotspot.city);
+                const position = getPosition(hotspot.latitude, hotspot.longitude);
                 const color = getRiskColor(hotspot.riskLevel);
 
                 return (
-                  <div
+                  <button
                     key={hotspot.id}
-                    className="absolute"
+                    type="button"
+                    aria-label={`${hotspot.city}: VAYU risk ${hotspot.riskScore}, ${getRiskLabel(hotspot.riskLevel)}. Select hotspot.`}
+                    onClick={() => setSelectedHotspotId(hotspot.id)}
+                    className="absolute text-left"
                     style={{
                       left: position.x,
                       top: position.y,
@@ -271,7 +309,7 @@ export default function MapView() {
 
                     {/* DOT */}
                     <div
-                      className={`relative h-5 w-5 rounded-full ${color} shadow-lg`}
+                      className={`relative h-5 w-5 rounded-full ${color} shadow-lg ${selectedHotspot?.id === hotspot.id ? "ring-4 ring-white/70" : ""}`}
                     />
 
                     {/* LABEL */}
@@ -279,10 +317,10 @@ export default function MapView() {
                       <p className="font-semibold">{hotspot.city}</p>
 
                       <p className="mt-1 text-slate-500">
-                        Risk {hotspot.riskScore}
+                        {hotspot.riskScore} / 100 · {getRiskLabel(hotspot.riskLevel)}
                       </p>
                     </div>
-                  </div>
+                  </button>
                 );
               })}
 
@@ -290,10 +328,10 @@ export default function MapView() {
             {prediction?.predictedZones?.map((zone, index) => (
               <div
                 key={`prediction-${index}`}
-                className="absolute h-4 w-4 rounded-full border border-orange-300 bg-orange-400/40"
+                className="absolute h-4 w-4 rounded-full border border-orange-300 bg-orange-400/80"
                 style={{
-                  left: `${35 + index * 12}%`,
-                  top: `${38 + index * 10}%`,
+                  left: getPosition(zone.latitude, zone.longitude).x,
+                  top: getPosition(zone.latitude, zone.longitude).y,
                 }}
                 title={`Predicted risk ${zone.risk} in ${zone.etaMinutes} minutes`}
               />
@@ -301,7 +339,7 @@ export default function MapView() {
 
             {/* PROTOTYPE LABEL */}
             <div className="absolute bottom-5 left-5 rounded-lg border border-white/10 bg-slate-950/80 px-3 py-2 text-xs text-slate-500 backdrop-blur">
-              Prototype map visualization
+              Prototype spatial visualization; positions are not geographically precise
             </div>
 
             {/* LEGEND */}
@@ -339,22 +377,27 @@ export default function MapView() {
             {/* SUMMARY */}
             <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
               <p className="text-xs tracking-widest text-slate-500">
-                CITY AIR STATUS
+                SELECTED PROTOTYPE HOTSPOT
               </p>
 
               <div className="mt-4 flex items-end justify-between">
                 <div>
                   <p className="text-5xl font-black text-orange-400">
-                    {highestRisk?.riskScore ?? "--"}
+                    {selectedHotspot?.riskScore ?? "--"}
                   </p>
 
                   <p className="mt-1 text-sm text-slate-400">
-                    Current Risk Score
+                    VAYU Risk Score
                   </p>
+                  {selectedHotspot && (
+                    <p className="mt-2 text-xs text-slate-500">
+                      {selectedHotspot.city} · {selectedHotspot.type.replaceAll("_", " ")} · {selectedHotspot.latitude}, {selectedHotspot.longitude}
+                    </p>
+                  )}
                 </div>
 
                 <span className="rounded-full bg-orange-400/10 px-3 py-1 text-xs font-bold text-orange-400">
-                  {getRiskLabel(highestRisk?.riskLevel)}
+                  {getRiskLabel(selectedHotspot?.riskLevel)}
                 </span>
               </div>
 
@@ -363,7 +406,7 @@ export default function MapView() {
                   className="h-full rounded-full bg-orange-400"
                   style={{
                     width: `${Math.min(
-                      highestRisk?.riskScore || 0,
+                      selectedHotspot?.riskScore || 0,
                       100
                     )}%`,
                   }}
@@ -371,7 +414,7 @@ export default function MapView() {
               </div>
 
               <p className="mt-3 text-xs text-slate-500">
-                Based on prototype environmental signals
+                Decision-support score from prototype events; not official AQI.
               </p>
             </div>
 
@@ -396,18 +439,25 @@ export default function MapView() {
                   <div className="flex justify-between">
                     <span className="text-slate-500">Wind</span>
                     <span>
-                      {weather.windSpeed} {weather.windDirection}
+                      {weather.windSpeed} km/h
                     </span>
+                  </div>
+
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Wind direction</span>
+                    <span>{weather.windDirection}</span>
                   </div>
 
                   <div className="flex justify-between">
                     <span className="text-slate-500">Condition</span>
                     <span>{weather.condition}</span>
                   </div>
+
+                  <p className="pt-2 text-xs text-slate-500">Prototype weather data</p>
                 </div>
               ) : (
                 <p className="mt-4 text-sm text-slate-500">
-                  Loading weather...
+                  {weatherError || "Loading weather context..."}
                 </p>
               )}
             </div>
@@ -415,10 +465,10 @@ export default function MapView() {
             {/* HOTSPOT LIST */}
             <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
               <div className="flex items-center justify-between">
-                <h2 className="font-bold">Active Hotspots</h2>
+                <h2 className="font-bold">Prototype hotspots</h2>
 
                 <span className="text-xs text-emerald-400">
-                  {hotspots.length} detected
+                  {hotspots.length} prototype records
                 </span>
               </div>
 
@@ -427,9 +477,11 @@ export default function MapView() {
                   const color = getRiskColor(hotspot.riskLevel);
 
                   return (
-                    <div
+                    <button
                       key={hotspot.id}
-                      className="rounded-xl border border-white/10 bg-slate-900 p-4"
+                      type="button"
+                      onClick={() => setSelectedHotspotId(hotspot.id)}
+                      className={`w-full rounded-xl border bg-slate-900 p-4 text-left ${selectedHotspot?.id === hotspot.id ? "border-emerald-400/50" : "border-white/10"}`}
                     >
                       <div className="flex items-start justify-between">
                         <div>
@@ -447,8 +499,8 @@ export default function MapView() {
                             {hotspot.type.replaceAll("_", " ")}
                           </p>
 
-                          <p className="mt-1 text-xs text-slate-500">
-                            Reports: {hotspot.reports}
+                          <p className="mt-2 text-xs text-slate-500">
+                            {getRiskLabel(hotspot.riskLevel)} VAYU Risk
                           </p>
                         </div>
 
@@ -462,7 +514,7 @@ export default function MapView() {
                           </p>
                         </div>
                       </div>
-                    </div>
+                    </button>
                   );
                 })}
               </div>
@@ -471,19 +523,17 @@ export default function MapView() {
             {/* PREDICTION */}
             <div className="rounded-2xl border border-emerald-400/20 bg-emerald-400/5 p-5">
               <p className="text-xs font-semibold tracking-widest text-emerald-400">
-                AI PREDICTION
+                PROTOTYPE SPREAD PREDICTION
               </p>
 
               {prediction ? (
                 <>
                   <h3 className="mt-3 text-lg font-bold">
-                    Pollution spread prediction
+                    Movement from {selectedHotspot?.city || "selected hotspot"}
                   </h3>
 
                   <p className="mt-2 text-sm leading-6 text-slate-400">
-                    Based on the current risk score and wind conditions,
-                    the system identified {prediction.predictedZones?.length || 0}{" "}
-                    predicted zones.
+                    Current risk {prediction.currentRisk} / 100 · Direction {prediction.windDirection} · Wind {prediction.windSpeed} km/h
                   </p>
 
                   <div className="mt-4 space-y-2">
@@ -503,7 +553,7 @@ export default function MapView() {
                         </div>
 
                         <p className="mt-1 text-slate-500">
-                          ETA: {zone.etaMinutes} minutes
+                          Estimated impact: {zone.etaMinutes} min · Coordinates: {zone.latitude}, {zone.longitude}
                         </p>
                       </div>
                     ))}
@@ -511,12 +561,12 @@ export default function MapView() {
                 </>
               ) : (
                 <p className="mt-3 text-sm text-slate-500">
-                  Loading prediction...
+                  {predictionLoading ? "Calculating spread prediction..." : predictionError || "Select a hotspot and load weather to calculate a prediction."}
                 </p>
               )}
 
               <div className="mt-4 rounded-xl bg-slate-950/60 p-3 text-xs text-slate-500">
-                Prediction window: next 60 minutes
+                Simplified wind-direction estimate; not a physical dispersion model.
               </div>
             </div>
           </aside>
